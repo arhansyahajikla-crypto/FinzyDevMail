@@ -38,6 +38,46 @@ app.post("/api/checker",auth,async(req,res)=>{
 app.post("/api/submissions",auth,(req,res)=>{let a=[...new Set((Array.isArray(req.body.emails)?req.body.emails:[]).map(norm).filter(Boolean))].slice(0,300);if(!a.length)return res.status(400).json({error:"Tidak ada email."});let id=db.transaction(()=>{let s=db.prepare("INSERT INTO submissions(user_id,total_items) VALUES(?,?)").run(req.user.id,a.length),ins=db.prepare("INSERT INTO submission_items(submission_id,email,normalized_email) VALUES(?,?,?)");a.forEach(e=>ins.run(s.lastInsertRowid,e,e));db.prepare("INSERT INTO audit_logs(user_id,action,target_type,target_id,metadata) VALUES(?,?,?,?,?)").run(req.user.id,"SUBMISSION_CREATED","submission",s.lastInsertRowid,JSON.stringify({count:a.length}));return s.lastInsertRowid})();res.json({submission_id:id})});
 app.get("/api/history",auth,(req,res)=>res.json({items:db.prepare("SELECT s.*, (SELECT email FROM submission_items i WHERE i.submission_id=s.id LIMIT 1) first_email FROM submissions s WHERE user_id=? ORDER BY id DESC LIMIT 100").all(req.user.id)}));
 app.get("/api/transactions",auth,(req,res)=>res.json({items:db.prepare("SELECT * FROM transactions WHERE user_id=? ORDER BY id DESC LIMIT 100").all(req.user.id)}));
+app.post("/api/withdrawals",auth,(req,res)=>{
+  const amount=Number(req.body.amount);
+  const method=String(req.body.method||"").trim();
+  const destination=String(req.body.destination||"").trim();
+  const name=String(req.body.name||"").trim();
+
+  if(!Number.isInteger(amount)||amount<10000)
+    return res.status(400).json({error:"Minimal penarikan Rp10.000."});
+
+  if(!method||!destination||!name)
+    return res.status(400).json({error:"Data penarikan belum lengkap."});
+
+  try{
+    const id=db.transaction(()=>{
+      const u=db.prepare("SELECT balance FROM users WHERE id=?").get(req.user.id);
+
+      if(!u||u.balance<amount)
+        throw new Error("Saldo tidak mencukupi.");
+
+      db.prepare("UPDATE users SET balance=balance-? WHERE id=?")
+        .run(amount,req.user.id);
+
+      const tx=db.prepare(
+        "INSERT INTO transactions(user_id,type,amount,status,note) VALUES(?,?,?,?,?)"
+      ).run(
+        req.user.id,
+        "PENARIKAN",
+        -amount,
+        "PENDING",
+        JSON.stringify({method,destination,name})
+      );
+
+      return tx.lastInsertRowid;
+    })();
+
+    res.json({ok:true,transaction_id:id,status:"PENDING"});
+  }catch(e){
+    res.status(400).json({error:e.message});
+  }
+});
 app.get("/api/admin/submissions",auth,admin,(req,res)=>res.json({items:db.prepare("SELECT s.*,u.email user_email FROM submissions s JOIN users u ON u.id=s.user_id ORDER BY s.id DESC LIMIT 200").all()}));
 app.post("/api/admin/submissions/:id/status",auth,admin,(req,res)=>{let st=["PENDING","DITERIMA","DITOLAK"].includes(req.body.status)?req.body.status:null;if(!st)return res.status(400).json({error:"Status invalid"});let s=db.prepare("SELECT * FROM submissions WHERE id=?").get(req.params.id);if(!s)return res.status(404).json({error:"Not found"});db.transaction(()=>{db.prepare("UPDATE submissions SET status=? WHERE id=?").run(st,s.id);db.prepare("UPDATE submission_items SET status=? WHERE submission_id=?").run(st,s.id);db.prepare("INSERT INTO audit_logs(user_id,action,target_type,target_id,metadata) VALUES(?,?,?,?,?)").run(req.user.id,"STATUS_CHANGED","submission",s.id,JSON.stringify({from:s.status,to:st}))})();res.json({ok:true})});
 app.get("/health",(req,res)=>res.json({ok:true,service:"FinzyDevMail"}));
