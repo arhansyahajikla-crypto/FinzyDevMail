@@ -13,6 +13,33 @@ async function check(){let a=arr("checkInput");if(!a.length)return alert("Masukk
 function clearC(){$("checkInput").value="";$("results").innerHTML="";$("prog").textContent=""}
 async function loadHistory(){try{let d=await api("/api/history");let items=d.items||[];$("acc").textContent=items.filter(x=>x.status==="DITERIMA").length;$("pen").textContent=items.filter(x=>x.status==="PENDING").length;$("rej").textContent=items.filter(x=>x.status==="DITOLAK").length;$("hist").innerHTML=items.length?items.map(x=>`<div class=item><div class=resultTop><b>Setoran #${x.id}</b><span class=badge>${x.status}</span></div><div class=meta>${esc(x.first_email||"-")} • ${x.total_items} email • ${x.created_at}</div></div>`).join(""):"<div class=card>Belum ada riwayat.</div>"}catch{}}
 async function loadTx(){try{let d=await api("/api/transactions");$("tx").innerHTML=d.items.map(x=>`<div class=item><b>${esc(x.type)}</b><div class=meta>${rupiah(x.amount)} • ${x.status}</div></div>`).join("")||"<div class=card>Belum ada transaksi.</div>"}catch{}}
+async function withdraw(){
+  const amount=Number(prompt("Nominal penarikan (minimal Rp10.000):","10000"));
+  if(!amount)return;
+
+  const method=prompt("Metode (Bank / DANA / OVO / GoPay):","");
+  if(!method)return;
+
+  const name=prompt("Nama pemilik rekening/akun:","");
+  if(!name)return;
+
+  const destination=prompt("Nomor rekening/nomor tujuan:","");
+  if(!destination)return;
+
+  try{
+    const d=await api("/api/withdrawals",{
+      method:"POST",
+      body:{amount,method,name,destination}
+    });
+
+    alert("Permintaan penarikan berhasil dibuat.\nStatus: "+d.status);
+    me=(await api("/api/me")).user;
+    render();
+    loadTx();
+  }catch(e){
+    alert(e.message);
+  }
+}
 async function loadAdmin(){if(me.role!=="admin")return;try{let d=await api("/api/admin/submissions");$("adminList").innerHTML=d.items.map(x=>`<div class=item><b>#${x.id} • ${esc(x.user_email)}</b><div class=meta>${x.total_items} email • ${x.status}</div><button onclick="setStatus(${x.id},'DITERIMA')">Terima</button> <button onclick="setStatus(${x.id},'DITOLAK')">Tolak</button></div>`).join("")}catch(e){$("adminList").textContent=e.message}}
 async function setStatus(id,status){await api("/api/admin/submissions/"+id+"/status",{method:"POST",body:{status}});loadAdmin();loadHistory()}
 function logout(){localStorage.removeItem("s3l_token");location.reload()}
