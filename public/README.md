@@ -1,0 +1,2 @@
+# SetorangML-style web
+Frontend demo berdasarkan screenshot. Login/register tersimpan lokal untuk demo. Google OAuth membutuhkan kredensial OAuth milik pemilik website. Fitur Check Gmail hanya validasi format; tidak melakukan login/enumerasi akun.
